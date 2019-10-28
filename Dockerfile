@@ -36,6 +36,7 @@ USER pptruser
 WORKDIR /home/pptruser
 
 COPY . .
+RUN npm i
 RUN npm run build
 
 CMD ["node","build/rendertron.js"]
