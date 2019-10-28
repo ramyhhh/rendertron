@@ -249,7 +249,7 @@ export class Renderer {
       printBackground: true,
       format: 'A4'
     }
-    const pdfOptions = Object.assign({}, options, defaults);
+    const pdfOptions = Object.assign({}, defaults, options);
     // Screenshot returns a buffer based on specified encoding above.
     // https://github.com/GoogleChrome/puppeteer/blob/v1.8.0/docs/api.md#pagescreenshotoptions
     const buffer = await page.pdf(pdfOptions) as Buffer;
