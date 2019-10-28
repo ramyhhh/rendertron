@@ -135,6 +135,9 @@ export class Rendertron {
         ctx.set(key, this.config.headers[key]);
       }
 
+      const filename = ctx.request.query.filename || (ctx.request.body && (<any>ctx.request.body).filename);
+      if (filename) ctx.set('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+
       ctx.set('Content-Type', 'application/pdf');
       ctx.set('Content-Length', pdf.length.toString());
       ctx.body = pdf;
