@@ -54,12 +54,11 @@ export class Rendertron {
       this.app.use(new MemoryCache().middleware());
     }
 
-    this.app.use(
-      route.get('/render/:url(.*)', this.handleRenderRequest.bind(this)));
-    this.app.use(route.get(
-      '/screenshot/:url(.*)', this.handleScreenshotRequest.bind(this)));
-    this.app.use(route.post(
-      '/screenshot/:url(.*)', this.handleScreenshotRequest.bind(this)));
+    this.app.use(route.get('/render/:url(.*)', this.handleRenderRequest.bind(this)));
+    this.app.use(route.get('/screenshot/:url(.*)', this.handleScreenshotRequest.bind(this)));
+    this.app.use(route.post('/screenshot/:url(.*)', this.handleScreenshotRequest.bind(this)));
+    this.app.use(route.get('/pdf/:url(.*)', this.handlePdfRequest.bind(this)));
+    this.app.use(route.post('/pdf/:url(.*)', this.handlePdfRequest.bind(this)));
 
     return this.app.listen(+this.port, this.host, () => {
       console.log(`Listening on port ${this.port}`);
@@ -105,6 +104,44 @@ export class Rendertron {
     serialized.customHeaders.forEach((value: string, key: string) => ctx.set(key, value));
     ctx.status = serialized.status;
     ctx.body = serialized.content;
+  }
+
+  async handlePdfRequest(ctx: Koa.Context, url: string) {
+    if (!this.renderer) {
+      throw (new Error('No renderer initalized yet.'));
+    }
+
+    if (this.restricted(url)) {
+      ctx.status = 403;
+      return;
+    }
+
+    let options = undefined;
+    if (ctx.method === 'POST' && ctx.request.body) {
+      options = ctx.request.body;
+    }
+
+    // const dimensions = {
+    //   width: Number(ctx.query['width']) || this.config.width,
+    //   height: Number(ctx.query['height']) || this.config.height
+    // };
+
+    //const mobileVersion = 'mobile' in ctx.query ? true : false;
+
+    try {
+      const pdf = await this.renderer.pdf(url, options);
+
+      for (const key in this.config.headers) {
+        ctx.set(key, this.config.headers[key]);
+      }
+
+      ctx.set('Content-Type', 'application/pdf');
+      ctx.set('Content-Length', pdf.length.toString());
+      ctx.body = pdf;
+    } catch (error) {
+      const err = error as ScreenshotError;
+      ctx.status = err.type === 'Forbidden' ? 403 : 500;
+    }
   }
 
   async handleScreenshotRequest(ctx: Koa.Context, url: string) {
