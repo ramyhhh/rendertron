@@ -35,8 +35,10 @@ RUN npm i puppeteer \
 USER pptruser
 WORKDIR /home/pptruser
 
-COPY . .
+COPY package.json .
 RUN npm i
+
+COPY . .
 RUN npm run build
 
 CMD ["node","build/rendertron.js"]
