@@ -218,7 +218,7 @@ export class Renderer {
 
   async pdf(
     url: string,
-    options?: object): Promise<Buffer> {
+    options?: any): Promise<Buffer> {
     const page = await this.browser.newPage();
 
     let response: puppeteer.Response | null = null;
