@@ -226,6 +226,7 @@ export class Renderer {
     try {
       // Navigate to page. Wait until there are no oustanding network requests.
       response = await page.goto(url, { timeout: this.config.timeout, waitUntil: 'networkidle0' });
+      if(options && options.waitForSelector) await page.waitForSelector(options.waitForSelector,{visible:true,timeout:this.config.timeout });
     } catch (e) {
       console.error(e);
     }
@@ -250,8 +251,6 @@ export class Renderer {
       format: 'A4'
     }
     const pdfOptions = Object.assign({}, defaults, options);
-    // Screenshot returns a buffer based on specified encoding above.
-    // https://github.com/GoogleChrome/puppeteer/blob/v1.8.0/docs/api.md#pagescreenshotoptions
     const buffer = await page.pdf(pdfOptions) as Buffer;
     await page.close();
     return buffer;
