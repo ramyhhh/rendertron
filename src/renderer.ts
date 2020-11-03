@@ -1,5 +1,6 @@
-import * as puppeteer from 'puppeteer';
-import * as url from 'url';
+import puppeteer from 'puppeteer';
+import url from 'url';
+import { dirname } from 'path';
 
 import { Config } from './config';
 
@@ -29,7 +30,17 @@ export class Renderer {
     this.config = config;
   }
 
-  async serialize(requestUrl: string, isMobile: boolean):
+  private restrictRequest(requestUrl: string): boolean {
+    const parsedUrl = url.parse(requestUrl);
+
+    if (parsedUrl.hostname && parsedUrl.hostname.match(/\.internal$/)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  async serialize(requestUrl: string, isMobile: boolean, timezoneId?: string):
     Promise<SerializedResponse> {
     /**
      * Executed on the page after the page has loaded. Strips script and
@@ -37,7 +48,7 @@ export class Renderer {
      */
     function stripPage() {
       // Strip only script tags that contain JavaScript (either no type attribute or one that contains "javascript")
-      const elements = document.querySelectorAll('script:not([type]), script[type*="javascript"], link[rel=import]');
+      const elements = document.querySelectorAll('script:not([type]), script[type*="javascript"], script[type="module"], link[rel=import]');
       for (const e of Array.from(elements)) {
         e.remove();
       }
@@ -48,19 +59,25 @@ export class Renderer {
      * has no effect on serialised output, but allows it to verify render
      * quality.
      */
-    function injectBaseHref(origin: string) {
-      const base = document.createElement('base');
-      base.setAttribute('href', origin);
+    function injectBaseHref(origin: string, directory: string) {
 
       const bases = document.head.querySelectorAll('base');
       if (bases.length) {
         // Patch existing <base> if it is relative.
         const existingBase = bases[0].getAttribute('href') || '';
         if (existingBase.startsWith('/')) {
-          bases[0].setAttribute('href', origin + existingBase);
+          // check if is only "/" if so add the origin only
+          if (existingBase === '/') {
+            bases[0].setAttribute('href', origin);
+          } else {
+            bases[0].setAttribute('href', origin + existingBase);
+          }
         }
       } else {
         // Only inject <base> if it doesn't already exist.
+        const base = document.createElement('base');
+        // Base url is the current directory
+        base.setAttribute('href', origin + directory);
         document.head.insertAdjacentElement('afterbegin', base);
       }
     }
@@ -75,9 +92,31 @@ export class Renderer {
       page.setUserAgent(MOBILE_USERAGENT);
     }
 
+    if (timezoneId) {
+      try {
+        await page.emulateTimezone(timezoneId);
+      } catch (e) {
+        if (e.message.includes('Invalid timezone')) {
+          return { status: 400, customHeaders: new Map(), content: 'Invalid timezone id' };
+        }
+      }
+    }
+
+    await page.setExtraHTTPHeaders(this.config.reqHeaders);
+
     page.evaluateOnNewDocument('customElements.forcePolyfill = true');
     page.evaluateOnNewDocument('ShadyDOM = {force: true}');
     page.evaluateOnNewDocument('ShadyCSS = {shimcssproperties: true}');
+
+    await page.setRequestInterception(true);
+
+    page.addListener('request', (interceptedRequest: puppeteer.Request) => {
+      if (this.restrictRequest(interceptedRequest.url())) {
+        interceptedRequest.abort();
+      } else {
+        interceptedRequest.continue();
+      }
+    });
 
     let response: puppeteer.Response | null = null;
     // Capture main frame response. This is used in the case that rendering
@@ -158,8 +197,7 @@ export class Renderer {
     await page.evaluate(stripPage);
     // Inject <base> tag with the origin of the request (ie. no path).
     const parsedUrl = url.parse(requestUrl);
-    await page.evaluate(
-      injectBaseHref, `${parsedUrl.protocol}//${parsedUrl.host}`);
+    await page.evaluate(injectBaseHref, `${parsedUrl.protocol}//${parsedUrl.host}`, `${dirname(parsedUrl.pathname || '')}`);
 
     // Serialize page.
     const result = await page.content() as string;
@@ -172,7 +210,8 @@ export class Renderer {
     url: string,
     isMobile: boolean,
     dimensions: ViewportDimensions,
-    options?: object): Promise<Buffer> {
+    options?: object,
+    timezoneId?: string): Promise<Buffer> {
     const page = await this.browser.newPage();
 
     // Page may reload when setting isMobile
@@ -182,6 +221,20 @@ export class Renderer {
 
     if (isMobile) {
       page.setUserAgent(MOBILE_USERAGENT);
+    }
+
+    await page.setRequestInterception(true);
+
+    page.addListener('request', (interceptedRequest: puppeteer.Request) => {
+      if (this.restrictRequest(interceptedRequest.url())) {
+        interceptedRequest.abort();
+      } else {
+        interceptedRequest.continue();
+      }
+    });
+
+    if (timezoneId) {
+      await page.emulateTimezone(timezoneId);
     }
 
     let response: puppeteer.Response | null = null;
@@ -226,7 +279,7 @@ export class Renderer {
     try {
       // Navigate to page. Wait until there are no oustanding network requests.
       response = await page.goto(url, { timeout: this.config.timeout, waitUntil: 'networkidle0' });
-      if(options && options.waitForSelector) await page.waitForSelector(options.waitForSelector,{visible:true,timeout:this.config.timeout });
+      if (options && options.waitForSelector) await page.waitForSelector(options.waitForSelector, { visible: true, timeout: this.config.timeout });
     } catch (e) {
       console.error(e);
     }
@@ -256,8 +309,6 @@ export class Renderer {
     return buffer;
   }
 }
-
-
 
 type ErrorType = 'Forbidden' | 'NoResponse';
 

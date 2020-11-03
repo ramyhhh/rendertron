@@ -13,7 +13,10 @@ WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 License for the specific language governing permissions and limitations under
 the License.
 -->
-<script src="inject-element-after-load.js"></script>
-<script src="inject-element-module.js" type="module"></script>
-<link rel="import" href="custom-element.html" />
-<custom-element></custom-element>
+
+<script>
+    window.onload = () => {
+        document.body.textContent = new Date(0).toString();
+        window.renderComplete = true;
+    };
+</script>
